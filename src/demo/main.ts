@@ -17,12 +17,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const terminalShell = await TerminalShell.create({
     container,
     welcomeMessage: `
-\x1b[1;36m     _                              _     
-    (_)___       _ __ ___  _ __ ___| |__  
-    | / __|_____| '_ \` _ \\| '__/ __| '_ \\ 
-    | \\__ \\_____| | | | | | |  \\__ \\ | | |
-   _/ |___/     |_| |_| |_|_|  |___/_| |_|
-  |__/                                     
+\x1b[1;36m                   _ _ _                 _          _ _ 
+ __   ____ _ _ __ (_) | | __ _       ___| |__   ___| | |
+ \\ \\ / / _\` | '_ \\| | | |/ _\` |_____/ __| '_ \\ / _ \\ | |
+  \\ V / (_| | | | | | | | (_| |_____\\__ \\ | | |  __/ | |
+   \\_/ \\__,_|_| |_|_|_|_|\\__,_|     |___/_| |_|\\___|_|_|
 \x1b[0m
 \x1b[33mA POSIX-like shell for the browser\x1b[0m
 \x1b[90mType "help" for available commands.\x1b[0m
