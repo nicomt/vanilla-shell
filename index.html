@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>vanilla-shell - Browser Shell Demo</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 20px;
+      color: #fff;
+    }
+
+    header h1 {
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+      background: linear-gradient(90deg, #00d4ff, #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    header p {
+      color: #94a3b8;
+      font-size: 1.1rem;
+    }
+
+    .terminal-container {
+      width: 100%;
+      max-width: 1000px;
+      height: 500px;
+      background: #1e1e1e;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+
+    .terminal-header {
+      background: #2d2d2d;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .terminal-button {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .terminal-button.red { background: #ff5f56; }
+    .terminal-button.yellow { background: #ffbd2e; }
+    .terminal-button.green { background: #27c93f; }
+
+    .terminal-title {
+      flex: 1;
+      text-align: center;
+      color: #888;
+      font-size: 0.9rem;
+    }
+
+    #terminal {
+      height: calc(100% - 40px);
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+      max-width: 1000px;
+      width: 100%;
+      margin-top: 40px;
+    }
+
+    .feature {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .feature h3 {
+      color: #00d4ff;
+      margin-bottom: 10px;
+      font-size: 1.1rem;
+    }
+
+    .feature p {
+      color: #94a3b8;
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    .commands-list {
+      max-width: 1000px;
+      width: 100%;
+      margin-top: 40px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .commands-list h2 {
+      color: #fff;
+      margin-bottom: 16px;
+    }
+
+    .commands-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 10px;
+    }
+
+    .command-tag {
+      background: rgba(124, 58, 237, 0.2);
+      color: #a78bfa;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 0.9rem;
+      text-align: center;
+    }
+
+    footer {
+      margin-top: 40px;
+      color: #64748b;
+      text-align: center;
+    }
+
+    footer a {
+      color: #00d4ff;
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>vanilla-shell</h1>
+    <p>A POSIX-like shell for the browser, powered by TypeScript and ZenFS</p>
+  </header>
+
+  <div class="terminal-container">
+    <div class="terminal-header">
+      <div class="terminal-button red"></div>
+      <div class="terminal-button yellow"></div>
+      <div class="terminal-button green"></div>
+      <div class="terminal-title">vanilla-shell — /home/user</div>
+    </div>
+    <div id="terminal"></div>
+  </div>
+
+  <div class="features">
+    <div class="feature">
+      <h3>🔧 Full Shell Parsing</h3>
+      <p>Based on mrsh - a minimal POSIX shell. Supports pipes, redirections, variables, and control flow.</p>
+    </div>
+    <div class="feature">
+      <h3>💾 Virtual Filesystem</h3>
+      <p>Uses memfs for a complete in-memory filesystem. Create, edit, and navigate files entirely in the browser.</p>
+    </div>
+    <div class="feature">
+      <h3>⚡ Virtual Commands</h3>
+      <p>Inspired by Vorpal.js - easily register TypeScript functions as shell commands with argument parsing.</p>
+    </div>
+    <div class="feature">
+      <h3>🖥️ XTerm.js Integration</h3>
+      <p>Beautiful terminal emulation with full keyboard support, history, and tab completion.</p>
+    </div>
+  </div>
+
+  <div class="commands-list">
+    <h2>Available Commands</h2>
+    <div class="commands-grid">
+      <span class="command-tag">echo</span>
+      <span class="command-tag">pwd</span>
+      <span class="command-tag">cd</span>
+      <span class="command-tag">ls</span>
+      <span class="command-tag">cat</span>
+      <span class="command-tag">mkdir</span>
+      <span class="command-tag">rm</span>
+      <span class="command-tag">touch</span>
+      <span class="command-tag">cp</span>
+      <span class="command-tag">mv</span>
+      <span class="command-tag">head</span>
+      <span class="command-tag">tail</span>
+      <span class="command-tag">grep</span>
+      <span class="command-tag">wc</span>
+      <span class="command-tag">export</span>
+      <span class="command-tag">env</span>
+      <span class="command-tag">clear</span>
+      <span class="command-tag">help</span>
+    </div>
+  </div>
+
+  <footer>
+    <p>
+      Based on <a href="https://github.com/emersion/mrsh" target="_blank">mrsh</a> by emersion
+      · Virtual commands inspired by <a href="https://github.com/dthree/vorpal" target="_blank">Vorpal.js</a>
+    </p>
+  </footer>
+
+  <script type="module" src="/src/demo/main.ts"></script>
+</body>
+</html>

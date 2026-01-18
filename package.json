@@ -1,0 +1,38 @@
+{
+  "name": "vanilla-shell",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "shell",
+    "posix",
+    "terminal",
+    "browser",
+    "zenfs",
+    "xterm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "description": "A POSIX-like shell for the browser using ZenFS and virtual commands",
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "@zenfs/core": "^2.0.0",
+    "@zenfs/dom": "^1.2.6",
+    "buffer": "^6.0.3",
+    "process": "^0.11.10"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.8",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-node-polyfills": "^0.25.0"
+  }
+}
