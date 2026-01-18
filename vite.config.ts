@@ -3,6 +3,7 @@ import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 export default defineConfig({
   root: '.',
+  base: '/vanilla-shell/',
   plugins: [
     nodePolyfills({
       // Enable Buffer polyfill for memfs
