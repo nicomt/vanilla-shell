@@ -8,7 +8,18 @@
 export * from './shell/ast';
 export * from './shell/shell';
 export * from './shell/filesystem';
-export * from './shell/commands';
+// Re-export specific items to avoid Command name clash with ast.ts
+export { defineCommand, z, CommandRegistry } from './shell/commands';
+export type {
+  ShellCommand,
+  CommandContext,
+  CommandResult,
+  CommandUsage,
+  CommandDefinition,
+  CommandSpec,
+  OptionMeta,
+  ParsedArgs,
+} from './shell/commands';
 export * from './parser/lexer';
 export * from './parser/parser';
 export { builtins } from './builtins';

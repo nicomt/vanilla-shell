@@ -31,7 +31,8 @@ import {
   Subshell,
 } from './ast';
 import { fs, type FileSystemInterface } from './filesystem';
-import { CommandRegistry, CommandContext, VirtualCommand } from './commands';
+import { CommandRegistry, ShellCommand, CommandContext as NewCommandContext, setGlobalRegistry } from './commands';
+import type { ZodRawShape } from 'zod';
 import builtins from '../builtins';
 
 export interface ShellOptions {
@@ -96,42 +97,38 @@ export class Shell {
 
     // Register builtins
     for (const builtin of builtins) {
-      this.commands.register(builtin);
+      this.commands.register(builtin as ShellCommand);
     }
 
-    // Register test as [ command alias
-    this.commands.register({
-      ...builtins.find(b => b.name === 'test')!,
-      name: '[',
-      aliases: [],
-    });
+    // Set up global registry for help command and other utilities
+    setGlobalRegistry(this.commands.getCommandMap());
   }
 
   /**
-   * Register a virtual command
+   * Get the command registry
    */
-  command(name: string) {
-    return this.commands.command(name);
+  get commandRegistry(): CommandRegistry {
+    return this.commands;
   }
 
   /**
    * Register a command directly
    */
-  registerCommand(command: VirtualCommand) {
+  registerCommand<T extends ZodRawShape>(command: ShellCommand<T>) {
     this.commands.register(command);
   }
 
   /**
    * Get a command by name
    */
-  getCommand(name: string): VirtualCommand | undefined {
+  getCommand(name: string): ShellCommand | undefined {
     return this.commands.get(name);
   }
 
   /**
    * List all commands
    */
-  listCommands(): VirtualCommand[] {
+  listCommands(): ShellCommand[] {
     return this.commands.listVisible();
   }
 
@@ -426,25 +423,33 @@ export class Shell {
     }
 
     // Look up command
-    const virtualCmd = this.commands.get(cmdName);
+    const shellCmd = this.commands.get(cmdName);
     let exitCode: number;
 
-    if (virtualCmd) {
-      const parsedArgs = this.commands.parseArgs(virtualCmd, args);
+    if (shellCmd) {
+      const parsedArgs = this.commands.parseArgs(shellCmd, args);
       
-      const context: CommandContext = {
-        args: parsedArgs,
+      // Convert env Map to Record for CommandContext
+      const envRecord: Record<string, string> = {};
+      for (const [key, value] of this.env) {
+        envRecord[key] = value;
+      }
+      
+      const context: NewCommandContext = {
         stdout: this.stdout,
         stderr: this.stderr,
         stdin: this.pipeBuffer, // Pass pipe input to command
-        env: this.env,
+        env: envRecord,
         cwd: this.cwd,
         fs: this.fs,
         shell: this,
+        setEnv: (name: string, value: string) => this.setEnv(name, value),
+        unsetEnv: (name: string) => this.env.delete(name),
+        exit: (code: number) => this.exit(code),
       };
 
       try {
-        exitCode = await virtualCmd.action(context);
+        exitCode = await this.commands.execute(shellCmd, parsedArgs, context);
       } catch (e: any) {
         this.stderr(`${cmdName}: ${e.message}\n`);
         exitCode = 1;
