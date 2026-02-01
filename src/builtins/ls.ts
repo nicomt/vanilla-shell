@@ -1,63 +1,89 @@
-import { VirtualCommand, defineCommand, CommandContext } from '../shell/commands';
+import { defineCommand, z } from '../shell/commands';
 import { resolvePath } from './utils';
 
-// ls - list directory contents
-export const ls: VirtualCommand = defineCommand(
-  'ls',
-  'List directory contents',
-  async (ctx: CommandContext) => {
-    const showHidden = ctx.args.a || ctx.args.all;
-    const longFormat = ctx.args.l;
-    const paths = ctx.args._.length > 0 ? ctx.args._ : ['.'];
+export const ls = defineCommand({
+  name: 'ls',
+  description: 'List directory contents',
+  category: 'filesystem',
+  examples: [
+    ['List current directory', 'ls'],
+    ['Show hidden files', 'ls -a'],
+    ['Long format with details', 'ls -l'],
+  ],
+  parameters: z.object({
+    all: z.boolean().default(false).describe('Show hidden files'),
+    l: z.boolean().default(false).describe('Use long listing format'),
+    _: z.array(z.string()).default([]).describe('Directories to list'),
+  }),
+  parameterAliases: {
+    a: 'all',
+  },
+  execute: async ({ all, l, _ }, ctx) => {
+    const paths = _.length > 0 ? _ : ['.'];
+    const multiplePaths = paths.length > 1;
 
-    for (const path of paths) {
+    for (let i = 0; i < paths.length; i++) {
+      const path = paths[i];
       const resolvedPath = resolvePath(ctx.cwd, path);
 
       try {
-        const stat = ctx.fs.statSync(resolvedPath);
-
-        if (stat.isFile()) {
-          ctx.stdout(path + '\n');
+        const stats = await ctx.fs.promises.stat(resolvedPath);
+        
+        if (stats.isFile()) {
+          if (l) {
+            ctx.stdout(`-rw-r--r-- 1 user user ${stats.size.toString().padStart(8)} ${path}\n`);
+          } else {
+            ctx.stdout(`${path}\n`);
+          }
           continue;
         }
 
-        if (paths.length > 1) {
+        if (multiplePaths) {
+          if (i > 0) ctx.stdout('\n');
           ctx.stdout(`${path}:\n`);
         }
 
-        let entries = ctx.fs.readdirSync(resolvedPath);
+        const entries = await ctx.fs.promises.readdir(resolvedPath);
+        const filtered = all ? entries : entries.filter(e => !e.startsWith('.'));
+        const sorted = filtered.sort();
 
-        if (!showHidden) {
-          entries = entries.filter(e => !e.startsWith('.'));
-        }
-
-        entries.sort();
-
-        if (longFormat) {
-          for (const entry of entries) {
-            const entryPath = resolvePath(resolvedPath, entry);
+        if (l) {
+          for (const entry of sorted) {
+            const entryPath = resolvedPath === '/' ? '/' + entry : resolvedPath + '/' + entry;
             try {
-              const entryStat = ctx.fs.statSync(entryPath);
-              const type = entryStat.isDirectory() ? 'd' : '-';
-              const size = entryStat.size.toString().padStart(8);
-              ctx.stdout(`${type}rw-r--r-- ${size} ${entry}\n`);
-            } catch {
-              ctx.stdout(`?????????? ???????? ${entry}\n`);
+              const entryStats = await ctx.fs.promises.stat(entryPath);
+              const isDir = entryStats.isDirectory();
+              const perms = isDir ? 'drwxr-xr-x' : '-rw-r--r--';
+              const size = entryStats.size?.toString().padStart(8) || '       0';
+              ctx.stdout(`${perms} 1 user user ${size} ${entry}\n`);
+            } catch (error) {
+              if (error instanceof Error && 'code' in error) {
+                ctx.stdout(`?????????? ? ?    ?           ? ${entry}\n`);
+              } else {
+                throw error;
+              }
             }
           }
         } else {
-          ctx.stdout(entries.join('  ') + '\n');
+          ctx.stdout(sorted.join('  ') + '\n');
         }
-
-        if (paths.length > 1) {
-          ctx.stdout('\n');
+      } catch (error) {
+        if (error instanceof Error && 'code' in error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === 'ENOENT') {
+            ctx.stderr(`ls: cannot access '${path}': No such file or directory\n`);
+          } else if (code === 'EACCES') {
+            ctx.stderr(`ls: cannot access '${path}': Permission denied\n`);
+          } else {
+            ctx.stderr(`ls: cannot access '${path}': ${error.message}\n`);
+          }
+        } else {
+          throw error;
         }
-      } catch (e) {
-        ctx.stderr(`ls: cannot access '${path}': No such file or directory\n`);
         return 1;
       }
     }
 
     return 0;
-  }
-);
+  },
+});

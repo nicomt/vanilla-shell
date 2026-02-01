@@ -1,56 +1,81 @@
-import { VirtualCommand, defineCommand, CommandContext } from '../shell/commands';
+import { defineCommand, z } from '../shell/commands';
 import { resolvePath } from './utils';
 
-// rm - remove files
-export const rm: VirtualCommand = defineCommand(
-  'rm',
-  'Remove files or directories',
-  async (ctx: CommandContext) => {
-    const recursive = ctx.args.r || ctx.args.R || ctx.args.recursive;
-    const force = ctx.args.f || ctx.args.force;
-
-    if (ctx.args._.length === 0) {
-      if (!force) {
-        ctx.stderr('rm: missing operand\n');
-        return 1;
-      }
-      return 0;
+export const rm = defineCommand({
+  name: 'rm',
+  description: 'Remove files or directories',
+  category: 'filesystem',
+  examples: [
+    ['Remove a file', 'rm file.txt'],
+    ['Remove directory recursively', 'rm -r mydir'],
+    ['Force remove without errors', 'rm -rf mydir'],
+  ],
+  parameters: z.object({
+    recursive: z.boolean().default(false).describe('Remove directories recursively'),
+    force: z.boolean().default(false).describe('Ignore nonexistent files'),
+    _: z.array(z.string()).default([]).describe('Files or directories to remove'),
+  }),
+  parameterAliases: {
+    r: 'recursive',
+    R: 'recursive',
+    f: 'force',
+  },
+  execute: async ({ recursive, force, _ }, ctx) => {
+    if (_.length === 0) {
+      ctx.stderr('rm: missing operand\n');
+      return 1;
     }
 
-    const removeRecursive = (path: string): void => {
-      const stat = ctx.fs.statSync(path);
-      if (stat.isDirectory()) {
-        const entries = ctx.fs.readdirSync(path);
+    const removeRecursive = async (path: string): Promise<void> => {
+      const stats = await ctx.fs.promises.stat(path);
+      if (stats.isDirectory()) {
+        const entries = await ctx.fs.promises.readdir(path);
         for (const entry of entries) {
-          removeRecursive(resolvePath(path, entry));
+          await removeRecursive(path === '/' ? '/' + entry : path + '/' + entry);
         }
-        ctx.fs.rmdirSync(path);
+        await ctx.fs.promises.rmdir(path);
       } else {
-        ctx.fs.unlinkSync(path);
+        await ctx.fs.promises.unlink(path);
       }
     };
 
-    for (const path of ctx.args._) {
+    for (const path of _) {
       const resolvedPath = resolvePath(ctx.cwd, path);
       try {
-        const stat = ctx.fs.statSync(resolvedPath);
-        if (stat.isDirectory()) {
+        const stats = await ctx.fs.promises.stat(resolvedPath);
+        if (stats.isDirectory()) {
           if (!recursive) {
             ctx.stderr(`rm: cannot remove '${path}': Is a directory\n`);
             return 1;
           }
-          removeRecursive(resolvedPath);
+          await removeRecursive(resolvedPath);
         } else {
-          ctx.fs.unlinkSync(resolvedPath);
+          await ctx.fs.promises.unlink(resolvedPath);
         }
-      } catch (e: any) {
-        if (!force) {
-          ctx.stderr(`rm: cannot remove '${path}': No such file or directory\n`);
-          return 1;
+      } catch (error) {
+        if (error instanceof Error && 'code' in error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === 'ENOENT') {
+            if (!force) {
+              ctx.stderr(`rm: cannot remove '${path}': No such file or directory\n`);
+              return 1;
+            }
+          } else if (code === 'EACCES') {
+            ctx.stderr(`rm: cannot remove '${path}': Permission denied\n`);
+            return 1;
+          } else if (code === 'ENOTEMPTY') {
+            ctx.stderr(`rm: cannot remove '${path}': Directory not empty\n`);
+            return 1;
+          } else {
+            ctx.stderr(`rm: cannot remove '${path}': ${error.message}\n`);
+            return 1;
+          }
+        } else {
+          throw error;
         }
       }
     }
 
     return 0;
-  }
-);
+  },
+});

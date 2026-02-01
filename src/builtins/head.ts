@@ -1,54 +1,62 @@
-import { VirtualCommand, defineCommand, CommandContext } from '../shell/commands';
+import { defineCommand, z } from '../shell/commands';
 import { resolvePath } from './utils';
 
-// head - output first part of files
-export const head: VirtualCommand = defineCommand(
-  'head',
-  'Output the first part of files',
-  async (ctx: CommandContext) => {
-    const lineCount = ctx.args.n ? parseInt(ctx.args.n as string, 10) : 10;
-
-    // Helper function to output head of content
-    const outputHead = (content: string) => {
-      let contentLines = content.split('\n');
-      // Remove trailing empty element if content ends with newline
-      if (contentLines.length > 0 && contentLines[contentLines.length - 1] === '') {
-        contentLines = contentLines.slice(0, -1);
-      }
-      const output = contentLines.slice(0, lineCount).join('\n');
-      ctx.stdout(output + '\n');
-    };
-
-    // If no arguments, read from stdin (pipe input)
-    if (ctx.args._.length === 0) {
-      if (ctx.stdin) {
-        outputHead(ctx.stdin);
-        return 0;
-      }
+export const head = defineCommand({
+  name: 'head',
+  description: 'Output the first part of files',
+  category: 'text',
+  examples: [
+    ['Show first 10 lines', 'head file.txt'],
+    ['Show first 5 lines', 'head -n 5 file.txt'],
+  ],
+  parameters: z.object({
+    n: z.coerce.number().default(10).describe('Number of lines to output'),
+    _: z.array(z.string()).default([]).describe('Files to read'),
+  }),
+  execute: async ({ n, _ }, ctx) => {
+    if (_.length === 0) {
       ctx.stderr('head: missing file operand\n');
       return 1;
     }
 
-    for (const path of ctx.args._) {
-      // Handle '-' to mean stdin
-      if (path === '-') {
-        if (ctx.stdin) {
-          outputHead(ctx.stdin);
-        }
-        continue;
-      }
-      
+    const showFilenames = _.length > 1;
+
+    for (let i = 0; i < _.length; i++) {
+      const path = _[i];
       const resolvedPath = resolvePath(ctx.cwd, path);
+
       try {
-        const content = ctx.fs.readFileSync(resolvedPath, 'utf8');
-        outputHead(content);
-      } catch {
-        ctx.stderr(`head: cannot open '${path}': No such file or directory\n`);
+        const content = await ctx.fs.promises.readFile(resolvedPath, 'utf8');
+        const lines = content.split('\n');
+        const output = lines.slice(0, n).join('\n');
+
+        if (showFilenames) {
+          if (i > 0) ctx.stdout('\n');
+          ctx.stdout(`==> ${path} <==\n`);
+        }
+        ctx.stdout(output);
+        if (!output.endsWith('\n') && output.length > 0) {
+          ctx.stdout('\n');
+        }
+      } catch (error) {
+        if (error instanceof Error && 'code' in error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === 'ENOENT') {
+            ctx.stderr(`head: cannot open '${path}' for reading: No such file or directory\n`);
+          } else if (code === 'EISDIR') {
+            ctx.stderr(`head: error reading '${path}': Is a directory\n`);
+          } else if (code === 'EACCES') {
+            ctx.stderr(`head: cannot open '${path}' for reading: Permission denied\n`);
+          } else {
+            ctx.stderr(`head: cannot open '${path}': ${error.message}\n`);
+          }
+        } else {
+          throw error;
+        }
         return 1;
       }
     }
 
     return 0;
   },
-  [{ name: 'n', short: 'n', description: 'Number of lines', hasValue: true }]
-);
+});

@@ -1,40 +1,54 @@
-import { VirtualCommand, defineCommand, CommandContext } from '../shell/commands';
+import { defineCommand, z } from '../shell/commands';
 import { resolvePath } from './utils';
 
-// cat - concatenate and print files
-export const cat: VirtualCommand = defineCommand(
-  'cat',
-  'Concatenate and print files',
-  async (ctx: CommandContext) => {
-    // If no arguments, read from stdin (pipe input)
-    if (ctx.args._.length === 0) {
+export const cat = defineCommand({
+  name: 'cat',
+  description: 'Concatenate and print files',
+  category: 'filesystem',
+  examples: [
+    ['Display file contents', 'cat file.txt'],
+    ['Concatenate multiple files', 'cat file1.txt file2.txt'],
+  ],
+  parameters: z.object({
+    _: z.array(z.string()).default([]).describe('Files to concatenate'),
+  }),
+  execute: async ({ _ }, ctx) => {
+    if (_.length === 0) {
       if (ctx.stdin) {
         ctx.stdout(ctx.stdin);
-        return 0;
       }
-      ctx.stderr('cat: missing file operand\n');
-      return 1;
+      return 0;
     }
 
-    for (const path of ctx.args._) {
-      // Handle '-' to mean stdin
+    for (const path of _) {
       if (path === '-') {
-        if (ctx.stdin) {
-          ctx.stdout(ctx.stdin);
-        }
+        if (ctx.stdin) ctx.stdout(ctx.stdin);
         continue;
       }
-      
+
       const resolvedPath = resolvePath(ctx.cwd, path);
       try {
-        const content = ctx.fs.readFileSync(resolvedPath, 'utf8');
+        const content = await ctx.fs.promises.readFile(resolvedPath, 'utf8');
         ctx.stdout(content);
-      } catch (e) {
-        ctx.stderr(`cat: ${path}: No such file or directory\n`);
+      } catch (error) {
+        if (error instanceof Error && 'code' in error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === 'ENOENT') {
+            ctx.stderr(`cat: ${path}: No such file or directory\n`);
+          } else if (code === 'EISDIR') {
+            ctx.stderr(`cat: ${path}: Is a directory\n`);
+          } else if (code === 'EACCES') {
+            ctx.stderr(`cat: ${path}: Permission denied\n`);
+          } else {
+            ctx.stderr(`cat: ${path}: ${error.message}\n`);
+          }
+        } else {
+          throw error;
+        }
         return 1;
       }
     }
 
     return 0;
-  }
-);
+  },
+});
