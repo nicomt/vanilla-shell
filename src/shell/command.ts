@@ -5,7 +5,7 @@
  * Inspired by clipanion's clean API design
  */
 
-import { z, ZodObject, ZodRawShape, ZodTypeAny, ZodDefault, ZodOptional } from 'zod';
+import { z, ZodObject, ZodRawShape, ZodType, ZodDefault, ZodOptional } from 'zod';
 import type { FileSystemInterface } from './filesystem';
 import type { Shell } from './shell';
 
@@ -239,7 +239,7 @@ function extractSchemaMetadata(schema: ZodObject<ZodRawShape>): OptionMeta[] {
   const shape = schema.shape;
 
   for (const [key, fieldSchema] of Object.entries(shape)) {
-    const zodSchema = fieldSchema as ZodTypeAny;
+    const zodSchema = fieldSchema as ZodType;
     const description = zodSchema.description ?? '';
     const { type, required, defaultValue } = analyzeZodType(zodSchema);
 
@@ -258,7 +258,7 @@ function extractSchemaMetadata(schema: ZodObject<ZodRawShape>): OptionMeta[] {
 /**
  * Get the type name from a Zod schema (works with both Zod 3 and 4)
  */
-function getZodTypeName(schema: ZodTypeAny): string {
+function getZodTypeName(schema: ZodType): string {
   const s = schema as any;
   // Zod 4 uses _zod structure
   if (s?._zod?.def?.type) {
@@ -275,7 +275,7 @@ function getZodTypeName(schema: ZodTypeAny): string {
 /**
  * Get the inner type from a wrapped Zod schema
  */
-function getZodInnerType(schema: ZodTypeAny): ZodTypeAny | null {
+function getZodInnerType(schema: ZodType): ZodType | null {
   const s = schema as any;
   // Zod 4
   if (s?._zod?.def?.innerType) {
@@ -291,7 +291,7 @@ function getZodInnerType(schema: ZodTypeAny): ZodTypeAny | null {
 /**
  * Get the default value from a Zod default schema
  */
-function getZodDefaultValue(schema: ZodTypeAny): unknown {
+function getZodDefaultValue(schema: ZodType): unknown {
   const s = schema as any;
   // Zod 4
   if (s?._zod?.def?.defaultValue !== undefined) {
@@ -313,7 +313,7 @@ function getZodDefaultValue(schema: ZodTypeAny): unknown {
 /**
  * Analyze a Zod type to extract metadata
  */
-function analyzeZodType(schema: ZodTypeAny): {
+function analyzeZodType(schema: ZodType): {
   type: OptionType;
   required: boolean;
   defaultValue?: unknown;
