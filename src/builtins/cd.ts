@@ -1,40 +1,54 @@
-import { VirtualCommand, defineCommand, CommandContext } from '../shell/commands';
+import { defineCommand, z } from '../shell/commands';
 import { resolvePath } from './utils';
 
-// cd - change directory
-export const cd: VirtualCommand = defineCommand(
-  'cd',
-  'Change the current directory',
-  async (ctx: CommandContext) => {
-    let target = ctx.args._[0];
+export const cd = defineCommand({
+  name: 'cd',
+  description: 'Change the current directory',
+  category: 'filesystem',
+  examples: [
+    ['Go home', 'cd'],
+    ['Go to parent', 'cd ..'],
+    ['Absolute path', 'cd /home/user'],
+  ],
+  parameters: z.object({
+    _: z.array(z.string()).default([]).describe('Directory to change to'),
+  }),
+  execute: async ({ _ }, ctx) => {
+    let target: string;
 
-    if (!target) {
-      target = ctx.env.get('HOME') || '/home/user';
-    } else if (target === '-') {
-      target = ctx.env.get('OLDPWD') || ctx.cwd;
-    } else if (target === '~') {
-      target = ctx.env.get('HOME') || '/home/user';
-    } else if (target.startsWith('~/')) {
-      const home = ctx.env.get('HOME') || '/home/user';
-      target = home + target.substring(1);
+    if (_.length === 0 || _[0] === '~') {
+      target = ctx.env['HOME'] || '/';
+    } else if (_[0] === '-') {
+      target = ctx.env['OLDPWD'] || ctx.cwd;
+    } else {
+      target = _[0];
     }
 
-    const newPath = resolvePath(ctx.cwd, target);
+    const resolvedPath = resolvePath(ctx.cwd, target);
 
     try {
-      const stat = ctx.fs.statSync(newPath);
-      if (!stat.isDirectory()) {
-        ctx.stderr(`cd: ${target}: Not a directory\n`);
+      const stats = await ctx.fs.promises.stat(resolvedPath);
+      if (!stats.isDirectory()) {
+        ctx.stderr(`cd: not a directory: ${_[0]}\n`);
         return 1;
       }
-      
-      ctx.env.set('OLDPWD', ctx.cwd);
-      ctx.shell.setCwd(newPath);
-      ctx.env.set('PWD', newPath);
+      ctx.setEnv('OLDPWD', ctx.cwd);
+      ctx.shell.setCwd(resolvedPath);
       return 0;
-    } catch (e) {
-      ctx.stderr(`cd: ${target}: No such file or directory\n`);
+    } catch (error) {
+      if (error instanceof Error && 'code' in error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT') {
+          ctx.stderr(`cd: no such file or directory: ${_[0]}\n`);
+        } else if (code === 'EACCES') {
+          ctx.stderr(`cd: permission denied: ${_[0]}\n`);
+        } else {
+          ctx.stderr(`cd: ${_[0]}: ${error.message}\n`);
+        }
+      } else {
+        throw error;
+      }
       return 1;
     }
-  }
-);
+  },
+});

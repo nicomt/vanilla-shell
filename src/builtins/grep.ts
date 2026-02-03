@@ -1,119 +1,100 @@
-import { VirtualCommand, defineCommand, CommandContext } from '../shell/commands';
+import { defineCommand, z } from '../shell/commands';
 import { resolvePath } from './utils';
 
-// grep - search for patterns
-export const grep: VirtualCommand = defineCommand(
-  'grep',
-  'Search for patterns in files',
-  async (ctx: CommandContext) => {
-    const ignoreCase = ctx.args.i;
-    const invertMatch = ctx.args.v;
-    const lineNumbers = ctx.args.n;
-    const countOnly = ctx.args.c;
-
-    if (ctx.args._.length < 1) {
+export const grep = defineCommand({
+  name: 'grep',
+  description: 'Search for patterns in files',
+  category: 'text',
+  examples: [
+    ['Search pattern in file', 'grep pattern file.txt'],
+    ['Case insensitive', 'grep -i pattern file.txt'],
+    ['Show line numbers', 'grep -n pattern file.txt'],
+    ['Invert match', 'grep -v pattern file.txt'],
+  ],
+  parameters: z.object({
+    i: z.boolean().default(false).describe('Ignore case'),
+    v: z.boolean().default(false).describe('Invert match'),
+    n: z.boolean().default(false).describe('Show line numbers'),
+    c: z.boolean().default(false).describe('Count matching lines'),
+    l: z.boolean().default(false).describe('List filenames only'),
+    _: z.array(z.string()).default([]).describe('Pattern and files'),
+  }),
+  execute: async ({ i, v, n, c, l, _ }, ctx) => {
+    if (_.length === 0) {
       ctx.stderr('grep: missing pattern\n');
       return 1;
     }
 
-    const pattern = ctx.args._[0];
-    const files = ctx.args._.slice(1);
+    const pattern = _[0];
+    const files = _.slice(1);
 
-    const flags = ignoreCase ? 'i' : '';
-    const regex = new RegExp(pattern, flags);
-    let found = false;
-
-    // If no files specified, read from stdin (pipe input)
     if (files.length === 0) {
-      if (!ctx.stdin) {
-        ctx.stderr('grep: missing file operand\n');
-        return 1;
-      }
-      
-      const lines = ctx.stdin.split('\n');
-      let matchCount = 0;
-
-      for (let i = 0; i < lines.length; i++) {
-        const match = regex.test(lines[i]);
-        if (match !== !!invertMatch) {
-          matchCount++;
-          if (!countOnly) {
-            const lineNum = lineNumbers ? `${i + 1}:` : '';
-            ctx.stdout(`${lineNum}${lines[i]}\n`);
-          }
-          found = true;
-        }
-      }
-
-      if (countOnly) {
-        ctx.stdout(`${matchCount}\n`);
-      }
-      
-      return found ? 0 : 1;
+      ctx.stderr('grep: missing file operand\n');
+      return 1;
     }
 
+    const flags = i ? 'gi' : 'g';
+    let regex: RegExp;
+    try {
+      regex = new RegExp(pattern, flags);
+    } catch {
+      ctx.stderr(`grep: invalid regular expression: ${pattern}\n`);
+      return 1;
+    }
+
+    const showFilenames = files.length > 1;
+    let found = false;
+
     for (const path of files) {
-      // Handle '-' to mean stdin
-      if (path === '-') {
-        if (ctx.stdin) {
-          const lines = ctx.stdin.split('\n');
-          let matchCount = 0;
-
-          for (let i = 0; i < lines.length; i++) {
-            const match = regex.test(lines[i]);
-            if (match !== !!invertMatch) {
-              matchCount++;
-              if (!countOnly) {
-                const prefix = files.length > 1 ? `(stdin):` : '';
-                const lineNum = lineNumbers ? `${i + 1}:` : '';
-                ctx.stdout(`${prefix}${lineNum}${lines[i]}\n`);
-              }
-              found = true;
-            }
-          }
-
-          if (countOnly) {
-            const prefix = files.length > 1 ? `(stdin):` : '';
-            ctx.stdout(`${prefix}${matchCount}\n`);
-          }
-        }
-        continue;
-      }
-      
       const resolvedPath = resolvePath(ctx.cwd, path);
+
       try {
-        const content = ctx.fs.readFileSync(resolvedPath, 'utf8');
+        const content = await ctx.fs.promises.readFile(resolvedPath, 'utf8');
         const lines = content.split('\n');
         let matchCount = 0;
 
-        for (let i = 0; i < lines.length; i++) {
-          const match = regex.test(lines[i]);
-          if (match !== !!invertMatch) {
-            matchCount++;
-            if (!countOnly) {
-              const prefix = files.length > 1 ? `${path}:` : '';
-              const lineNum = lineNumbers ? `${i + 1}:` : '';
-              ctx.stdout(`${prefix}${lineNum}${lines[i]}\n`);
-            }
+        for (let lineNum = 0; lineNum < lines.length; lineNum++) {
+          const line = lines[lineNum];
+          const matches = regex.test(line);
+          regex.lastIndex = 0; // Reset for global regex
+
+          if (matches !== v) {
             found = true;
+            matchCount++;
+
+            if (!c && !l) {
+              const prefix = showFilenames ? `${path}:` : '';
+              const linePrefix = n ? `${lineNum + 1}:` : '';
+              ctx.stdout(`${prefix}${linePrefix}${line}\n`);
+            }
           }
         }
 
-        if (countOnly) {
-          const prefix = files.length > 1 ? `${path}:` : '';
+        if (c) {
+          const prefix = showFilenames ? `${path}:` : '';
           ctx.stdout(`${prefix}${matchCount}\n`);
+        } else if (l && matchCount > 0) {
+          ctx.stdout(`${path}\n`);
         }
-      } catch {
-        ctx.stderr(`grep: ${path}: No such file or directory\n`);
+      } catch (error) {
+        if (error instanceof Error && 'code' in error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === 'ENOENT') {
+            ctx.stderr(`grep: ${path}: No such file or directory\n`);
+          } else if (code === 'EISDIR') {
+            ctx.stderr(`grep: ${path}: Is a directory\n`);
+          } else if (code === 'EACCES') {
+            ctx.stderr(`grep: ${path}: Permission denied\n`);
+          } else {
+            ctx.stderr(`grep: ${path}: ${error.message}\n`);
+          }
+        } else {
+          throw error;
+        }
+        return 1;
       }
     }
 
     return found ? 0 : 1;
   },
-  [
-    { name: 'i', short: 'i', description: 'Ignore case', hasValue: false },
-    { name: 'v', short: 'v', description: 'Invert match', hasValue: false },
-    { name: 'n', short: 'n', description: 'Line numbers', hasValue: false },
-    { name: 'c', short: 'c', description: 'Count only', hasValue: false },
-  ]
-);
+});

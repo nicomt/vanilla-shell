@@ -1,70 +1,88 @@
 /**
- * Virtual Command System (Vorpal-style)
- * Allows registering TypeScript functions as shell commands
+ * Command Registry - Manages registered commands
  */
 
-export interface CommandArgs {
-  [key: string]: string | string[] | boolean | undefined;
-  _: string[]; // Positional arguments
+import type { ZodRawShape } from 'zod';
+
+// Re-export everything from command.ts
+export {
+  defineCommand,
+  z,
+} from './command';
+
+export type {
+  ShellCommand,
+  CommandContext,
+  CommandResult,
+  CommandUsage,
+  CommandDefinition,
+  CommandSpec,
+  OptionMeta,
+  ParameterAliases,
+} from './command';
+
+// For backwards compatibility, also export ShellCommand as Command
+export { type ShellCommand as Command } from './command';
+
+import type { ShellCommand, CommandContext } from './command';
+
+// Global registry for commands (used by help and other commands)
+let globalRegistry: Map<string, ShellCommand> | null = null;
+
+/**
+ * Set the global registry (called during shell initialization)
+ */
+export function setGlobalRegistry(registry: Map<string, ShellCommand>): void {
+  globalRegistry = registry;
 }
 
-export interface CommandContext {
-  args: CommandArgs;
-  stdout: (text: string) => void;
-  stderr: (text: string) => void;
-  stdin: string; // Pipe input from previous command
-  env: Map<string, string>;
-  cwd: string;
-  fs: import('./filesystem').FileSystemInterface;
-  shell: import('./shell').Shell;
-}
-
-export type CommandAction = (context: CommandContext) => Promise<number> | number;
-
-export interface CommandOption {
-  name: string;
-  short?: string;
-  description: string;
-  required?: boolean;
-  hasValue?: boolean;
-  defaultValue?: string;
-}
-
-export interface VirtualCommand {
-  name: string;
-  description: string;
-  usage?: string;
-  options: CommandOption[];
-  action: CommandAction;
-  aliases: string[];
-  hidden: boolean;
-}
-
-export class CommandRegistry {
-  private commands: Map<string, VirtualCommand> = new Map();
-  private aliases: Map<string, string> = new Map();
-
-  /**
-   * Register a new virtual command
-   */
-  command(name: string): CommandBuilder {
-    return new CommandBuilder(this, name);
+/**
+ * Get the global command registry
+ */
+export function getRegistry(): Map<string, ShellCommand> {
+  if (!globalRegistry) {
+    throw new Error('Command registry not initialized');
   }
+  return globalRegistry;
+}
+
+/**
+ * Parsed command arguments from shell input
+ */
+export interface ParsedArgs {
+  [key: string]: string | string[] | boolean | undefined;
+  /** Positional arguments */
+  _: string[];
+}
+
+/**
+ * Registry for shell commands
+ */
+export class CommandRegistry {
+  private commands = new Map<string, ShellCommand>();
+  private aliases = new Map<string, string>();
 
   /**
-   * Register a command directly
+   * Register a command
    */
-  register(command: VirtualCommand): void {
-    this.commands.set(command.name, command);
+  register<T extends ZodRawShape>(command: ShellCommand<T>): void {
+    this.commands.set(command.name, command as unknown as ShellCommand);
     for (const alias of command.aliases) {
       this.aliases.set(alias, command.name);
     }
   }
 
   /**
+   * Get the internal command map (for global registry)
+   */
+  getCommandMap(): Map<string, ShellCommand> {
+    return this.commands;
+  }
+
+  /**
    * Get a command by name or alias
    */
-  get(name: string): VirtualCommand | undefined {
+  get(name: string): ShellCommand | undefined {
     const realName = this.aliases.get(name) || name;
     return this.commands.get(realName);
   }
@@ -93,22 +111,25 @@ export class CommandRegistry {
   /**
    * Get all registered commands
    */
-  list(): VirtualCommand[] {
+  list(): ShellCommand[] {
     return Array.from(this.commands.values());
   }
 
   /**
    * Get visible commands (non-hidden)
    */
-  listVisible(): VirtualCommand[] {
+  listVisible(): ShellCommand[] {
     return this.list().filter(cmd => !cmd.hidden);
   }
 
   /**
-   * Parse arguments for a command
+   * Parse shell arguments into typed params for a command
+   * Applies parameter aliases before validation
    */
-  parseArgs(command: VirtualCommand, args: string[]): CommandArgs {
-    const result: CommandArgs = { _: [] };
+  parseArgs(command: ShellCommand, args: string[]): ParsedArgs {
+    const result: ParsedArgs = { _: [] };
+    const options = command.getDefinition().options;
+    const paramAliases = command.parameterAliases;
     let i = 0;
 
     while (i < args.length) {
@@ -117,13 +138,15 @@ export class CommandRegistry {
       if (arg.startsWith('--')) {
         const eqIndex = arg.indexOf('=');
         if (eqIndex !== -1) {
-          const name = arg.substring(2, eqIndex);
+          const rawName = arg.substring(2, eqIndex);
+          const name = paramAliases[rawName] ?? rawName;
           const value = arg.substring(eqIndex + 1);
           result[name] = value;
         } else {
-          const name = arg.substring(2);
-          const option = command.options.find(o => o.name === name);
-          if (option?.hasValue && i + 1 < args.length) {
+          const rawName = arg.substring(2);
+          const name = paramAliases[rawName] ?? rawName;
+          const opt = options.find(o => o.name === name);
+          if (opt?.type !== 'boolean' && i + 1 < args.length) {
             result[name] = args[++i];
           } else {
             result[name] = true;
@@ -131,15 +154,26 @@ export class CommandRegistry {
         }
       } else if (arg.startsWith('-') && arg.length === 2) {
         const short = arg[1];
-        const option = command.options.find(o => o.short === short);
-        if (option) {
-          if (option.hasValue && i + 1 < args.length) {
-            result[option.name] = args[++i];
+        // Check if short flag is an alias
+        const canonicalName = paramAliases[short];
+        if (canonicalName) {
+          const opt = options.find(o => o.name === canonicalName);
+          if (opt?.type !== 'boolean' && i + 1 < args.length) {
+            result[canonicalName] = args[++i];
           } else {
-            result[option.name] = true;
+            result[canonicalName] = true;
           }
         } else {
-          result[short] = true;
+          const opt = options.find(o => o.short === short);
+          if (opt) {
+            if (opt.type !== 'boolean' && i + 1 < args.length) {
+              result[opt.name] = args[++i];
+            } else {
+              result[opt.name] = true;
+            }
+          } else {
+            result[short] = true;
+          }
         }
       } else {
         result._.push(arg);
@@ -148,114 +182,19 @@ export class CommandRegistry {
       i++;
     }
 
-    // Apply default values
-    for (const option of command.options) {
-      if (result[option.name] === undefined && option.defaultValue !== undefined) {
-        result[option.name] = option.defaultValue;
-      }
-    }
-
     return result;
   }
-}
-
-export class CommandBuilder {
-  private registry: CommandRegistry;
-  private command: VirtualCommand;
-
-  constructor(registry: CommandRegistry, name: string) {
-    this.registry = registry;
-    this.command = {
-      name,
-      description: '',
-      options: [],
-      action: async () => 0,
-      aliases: [],
-      hidden: false,
-    };
-  }
 
   /**
-   * Set command description
+   * Execute a command with parsed args and context
    */
-  description(desc: string): this {
-    this.command.description = desc;
-    return this;
+  async execute(
+    command: ShellCommand,
+    parsedArgs: ParsedArgs,
+    ctx: CommandContext
+  ): Promise<number> {
+    // Build params object from parsed args and schema
+    const params = command.parameters.parse(parsedArgs);
+    return command.execute(params, ctx);
   }
-
-  /**
-   * Set usage string
-   */
-  usage(usage: string): this {
-    this.command.usage = usage;
-    return this;
-  }
-
-  /**
-   * Add an alias
-   */
-  alias(name: string): this {
-    this.command.aliases.push(name);
-    return this;
-  }
-
-  /**
-   * Add an option
-   */
-  option(name: string, description: string, options?: Partial<CommandOption>): this {
-    const opt: CommandOption = {
-      name: name.replace(/^--?/, ''),
-      description,
-      ...options,
-    };
-
-    // Parse short option from name like "-n, --name"
-    const match = name.match(/^-(\w),\s*--(\w+)/);
-    if (match) {
-      opt.short = match[1];
-      opt.name = match[2];
-    } else if (name.startsWith('--')) {
-      opt.name = name.substring(2);
-    } else if (name.startsWith('-') && name.length === 2) {
-      opt.short = name[1];
-      opt.name = name[1];
-    }
-
-    this.command.options.push(opt);
-    return this;
-  }
-
-  /**
-   * Mark command as hidden (won't show in help)
-   */
-  hidden(): this {
-    this.command.hidden = true;
-    return this;
-  }
-
-  /**
-   * Set the action handler
-   */
-  action(fn: CommandAction): this {
-    this.command.action = fn;
-    this.registry.register(this.command);
-    return this;
-  }
-}
-
-// Utility function to create a simple command
-export function defineCommand(
-  name: string,
-  description: string,
-  action: CommandAction,
-  options: CommandOption[] = []
-): VirtualCommand {
-  return {
-    name,
-    description,
-    options,
-    action,
-    aliases: [],
-    hidden: false,
-  };
 }

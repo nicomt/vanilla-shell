@@ -1,40 +1,94 @@
-import { VirtualCommand, defineCommand, CommandContext } from '../shell/commands';
+import { defineCommand, z } from '../shell/commands';
 
-// printf - format and print data
-export const printf: VirtualCommand = defineCommand(
-  'printf',
-  'Format and print data',
-  async (ctx: CommandContext) => {
-    if (ctx.args._.length === 0) {
+export const printf = defineCommand({
+  name: 'printf',
+  description: 'Format and print data',
+  category: 'text',
+  examples: [
+    ['Print with format', 'printf "%s\\n" hello'],
+    ['Print with newline', 'printf "Hello %s\\n" world'],
+    ['Print number', 'printf "%d\\n" 42'],
+  ],
+  parameters: z.object({
+    _: z.array(z.string()).default([]).describe('Format string and arguments'),
+  }),
+  execute: async ({ _ }, ctx) => {
+    if (_.length === 0) {
       return 0;
     }
 
-    let format = ctx.args._[0];
-    const args = ctx.args._.slice(1);
+    const format = _[0];
+    const args = _.slice(1);
+
     let argIndex = 0;
+    let result = '';
+    let i = 0;
 
-    // Simple printf implementation
-    const output = format.replace(/%([sdfcx%])/g, (match, specifier) => {
-      if (specifier === '%') return '%';
-      const arg = args[argIndex++] || '';
-      switch (specifier) {
-        case 's': return arg;
-        case 'd': return parseInt(arg, 10).toString();
-        case 'f': return parseFloat(arg).toString();
-        case 'c': return arg[0] || '';
-        case 'x': return parseInt(arg, 10).toString(16);
-        default: return match;
+    while (i < format.length) {
+      if (format[i] === '\\') {
+        i++;
+        if (i < format.length) {
+          switch (format[i]) {
+            case 'n':
+              result += '\n';
+              break;
+            case 't':
+              result += '\t';
+              break;
+            case 'r':
+              result += '\r';
+              break;
+            case '\\':
+              result += '\\';
+              break;
+            default:
+              result += format[i];
+          }
+        }
+      } else if (format[i] === '%') {
+        i++;
+        if (i < format.length) {
+          const arg = args[argIndex] || '';
+          switch (format[i]) {
+            case 's':
+              result += arg;
+              argIndex++;
+              break;
+            case 'd':
+            case 'i':
+              result += parseInt(arg, 10) || 0;
+              argIndex++;
+              break;
+            case 'f':
+              result += parseFloat(arg) || 0;
+              argIndex++;
+              break;
+            case 'x':
+              result += (parseInt(arg, 10) || 0).toString(16);
+              argIndex++;
+              break;
+            case 'X':
+              result += (parseInt(arg, 10) || 0).toString(16).toUpperCase();
+              argIndex++;
+              break;
+            case 'o':
+              result += (parseInt(arg, 10) || 0).toString(8);
+              argIndex++;
+              break;
+            case '%':
+              result += '%';
+              break;
+            default:
+              result += format[i];
+          }
+        }
+      } else {
+        result += format[i];
       }
-    });
+      i++;
+    }
 
-    // Handle escape sequences
-    const processed = output
-      .replace(/\\n/g, '\n')
-      .replace(/\\t/g, '\t')
-      .replace(/\\r/g, '\r')
-      .replace(/\\\\/g, '\\');
-
-    ctx.stdout(processed);
+    ctx.stdout(result);
     return 0;
-  }
-);
+  },
+});

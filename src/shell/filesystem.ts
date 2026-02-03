@@ -9,7 +9,26 @@ import { IndexedDB } from '@zenfs/dom';
 export { fs };
 
 /**
- * Minimal filesystem interface used by the shell
+ * Async filesystem interface used by commands (preferred)
+ */
+export interface AsyncFileSystem {
+  readFile(path: string, encoding: BufferEncoding): Promise<string>;
+  readFile(path: string): Promise<Buffer>;
+  writeFile(path: string, data: string | Buffer): Promise<void>;
+  appendFile(path: string, data: string | Buffer): Promise<void>;
+  readdir(path: string): Promise<string[]>;
+  mkdir(path: string, options?: { recursive?: boolean }): Promise<string | void | undefined>;
+  rmdir(path: string): Promise<void>;
+  stat(path: string): Promise<{ isFile(): boolean; isDirectory(): boolean; size: number; mtime: Date }>;
+  access(path: string): Promise<void>;
+  unlink(path: string): Promise<void>;
+  rename(oldPath: string, newPath: string): Promise<void>;
+  copyFile(src: string, dest: string): Promise<void>;
+  realpath(path: string): Promise<string>;
+}
+
+/**
+ * Minimal filesystem interface used by the shell (sync for compatibility)
  */
 export interface FileSystemInterface {
   readFileSync(path: string, options: BufferEncoding): string;
@@ -25,6 +44,8 @@ export interface FileSystemInterface {
   renameSync(oldPath: string, newPath: string): void;
   copyFileSync(src: string, dest: string): void;
   realpathSync(path: string): string | Buffer;
+  /** Async filesystem methods (preferred) */
+  promises: AsyncFileSystem;
 }
 
 // Initialization state

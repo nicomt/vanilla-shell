@@ -1,8 +1,10 @@
-import { VirtualCommand, defineCommand } from '../shell/commands';
+import { defineCommand, z } from '../shell/commands';
 
-// false - return failure
-export const falseCmd: VirtualCommand = defineCommand(
-  'false',
-  'Return failure',
-  async () => 1
-);
+export const falseCmd = defineCommand({
+  name: 'false',
+  description: 'Return false (exit code 1)',
+  category: 'control',
+  examples: [['Return failure', 'false']],
+  parameters: z.object({}),
+  execute: async () => 1,
+});

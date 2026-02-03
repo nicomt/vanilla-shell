@@ -1,11 +1,13 @@
-import { VirtualCommand, defineCommand, CommandContext } from '../shell/commands';
+import { defineCommand, z } from '../shell/commands';
 
-// pwd - print working directory
-export const pwd: VirtualCommand = defineCommand(
-  'pwd',
-  'Print the current working directory',
-  async (ctx: CommandContext) => {
+export const pwd = defineCommand({
+  name: 'pwd',
+  description: 'Print working directory',
+  category: 'filesystem',
+  examples: [['Print current directory', 'pwd']],
+  parameters: z.object({}),
+  execute: async (_params, ctx) => {
     ctx.stdout(ctx.cwd + '\n');
     return 0;
-  }
-);
+  },
+});
