@@ -11,7 +11,7 @@ export const mkdir = defineCommand({
   ],
   parameters: z.object({
     parents: z.boolean().default(false).describe('Create parent directories as needed'),
-    _: z.array(z.string()).describe('Directories to create'),
+    _: z.array(z.string()).default([]).describe('Directories to create'),
   }),
   parameterAliases: {
     p: 'parents',

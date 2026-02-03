@@ -40,7 +40,11 @@ export const rmdir = defineCommand({
               await ctx.fs.promises.rmdir(partPath);
             } catch (error) {
               if (error instanceof Error && 'code' in error) {
-                break;
+                const code = (error as NodeJS.ErrnoException).code;
+                // Stop attempting to remove further parents on expected, non-fatal conditions.
+                if (code === 'ENOENT' || code === 'ENOTEMPTY') {
+                  break;
+                }
               }
               throw error;
             }
